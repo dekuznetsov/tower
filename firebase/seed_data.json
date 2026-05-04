@@ -1,0 +1,20 @@
+{
+  "farms": {
+    "farm_id_1": {
+      "towers": {
+        "tower_1": {
+          "pump_speed": 0,
+          "pump_mode": "manual",
+          "pump_state": false,
+          "pump_switch": false,
+          "interval_on_min": 1,
+          "interval_off_min": 1,
+          "sensors": {
+            "moisture": 0,
+            "water_level_low": false
+          }
+        }
+      }
+    }
+  }
+}

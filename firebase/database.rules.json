@@ -1,0 +1,12 @@
+{
+  "rules": {
+    "farms": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "$other": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}
