@@ -1,45 +1,45 @@
-# Firebase Seed Data
+# Початкові дані Firebase
 
-This directory contains the initial database structure for the hydroponics farm management system.
+Ця тека містить початкову структуру бази даних для системи керування гідропонною фермою.
 
-## File
+## Файл
 
-- `seed_data.json` — complete Firebase Realtime Database seed JSON for `farms/farm_id_1/towers/tower_1`
+- `seed_data.json` — повний початковий JSON для Firebase Realtime Database за шляхом `farms/farm_id_1/towers/tower_1`
 
-## Database Schema
+## Схема бази даних
 
 ```
 farms/
   farm_id_1/
     towers/
       tower_1/
-        pump_speed:       0          (Integer, 0–255 PWM duty cycle)
+        pump_speed:       0          (Integer, 0–255 шпаруватість PWM)
         pump_mode:        "manual"   (String, "auto" | "manual")
-        pump_state:       false      (Boolean, actual pump on/off — written by firmware)
-        pump_switch:      false      (Boolean, operator intent in manual mode)
-        interval_on_min:  1          (Integer, minutes pump stays on in auto mode)
-        interval_off_min: 1          (Integer, minutes pump stays off in auto mode)
+        pump_state:       false      (Boolean, фактичний стан on/off — записує прошивка)
+        pump_switch:      false      (Boolean, намір оператора в ручному режимі)
+        interval_on_min:  1          (Integer, хвилин насос увімкнено в авто-режимі)
+        interval_off_min: 1          (Integer, хвилин насос вимкнено в авто-режимі)
         sensors/
-          moisture:         0        (Integer, ADC raw value 0–4095)
-          water_level_low:  false    (Boolean, true when reservoir is below threshold)
+          moisture:         0        (Integer, сире значення ADC 0–4095)
+          water_level_low:  false    (Boolean, true коли резервуар нижче порогу)
 ```
 
-## Importing via Firebase Console
+## Імпорт через консоль Firebase
 
-1. Open the [Firebase Console](https://console.firebase.google.com) and select your project.
-2. Navigate to **Realtime Database** in the left sidebar.
-3. Click the three-dot menu (⋮) in the top-right corner of the data panel.
-4. Select **Import JSON**.
-5. Click **Browse** and select `firebase/seed_data.json`.
-6. Click **Import**.
+1. Відкрийте [консоль Firebase](https://console.firebase.google.com) та оберіть свій проєкт.
+2. Перейдіть до **Realtime Database** у лівій панелі.
+3. Натисніть меню з трьох крапок (⋮) у правому верхньому куті панелі даних.
+4. Оберіть **Import JSON**.
+5. Натисніть **Browse** та оберіть `firebase/seed_data.json`.
+6. Натисніть **Import**.
 
-> **Warning:** Importing JSON via the console replaces the entire database. If you already have data, use the REST API method below to merge instead.
+> **Увага:** імпорт JSON через консоль замінює всю базу даних. Якщо у вас уже є дані, скористайтеся методом REST API нижче, щоб виконати злиття.
 
-## Importing via REST API
+## Імпорт через REST API
 
-Use the Firebase REST API to write the seed data without overwriting unrelated paths.
+Скористайтеся REST API Firebase, щоб записати початкові дані, не перезаписуючи несуміжні шляхи.
 
-### Write the full tower node
+### Запис повного вузла башти
 
 ```bash
 curl -X PUT \
@@ -59,39 +59,39 @@ curl -X PUT \
   }'
 ```
 
-Replace `<YOUR_PROJECT_ID>` and `<YOUR_DATABASE_SECRET>` with your project's values. The database secret can be found in **Project Settings → Service Accounts → Database Secrets**.
+Замініть `<YOUR_PROJECT_ID>` та `<YOUR_DATABASE_SECRET>` значеннями свого проєкту. Секрет бази даних можна знайти в **Project Settings → Service Accounts → Database Secrets**.
 
-### Using a Firebase ID token (recommended for production)
+### Використання Firebase ID token (рекомендовано для продакшну)
 
 ```bash
-# First obtain an ID token via the Firebase Auth REST API, then:
+# Спершу отримайте ID token через Firebase Auth REST API, потім:
 curl -X PUT \
   "https://<YOUR_PROJECT_ID>-default-rtdb.firebaseio.com/farms/farm_id_1/towers/tower_1.json?auth=<ID_TOKEN>" \
   -H "Content-Type: application/json" \
   -d @firebase/seed_data.json
 ```
 
-> **Note:** The `seed_data.json` file wraps the data under the `farms` root key for console import compatibility. When using the REST API to target a specific path, extract the inner object or adjust the `-d` payload accordingly.
+> **Примітка:** файл `seed_data.json` обгортає дані під кореневим ключем `farms` для сумісності з імпортом через консоль. Коли ви використовуєте REST API для конкретного шляху, витягніть внутрішній об'єкт або відповідно скоригуйте корисне навантаження `-d`.
 
-## Security Rules
+## Правила безпеки
 
-The `database.rules.json` file contains the Firebase Realtime Database security rules for this project.
+Файл `database.rules.json` містить правила безпеки Firebase Realtime Database для цього проєкту.
 
-### Rules Summary
+### Стислий огляд правил
 
-- Authenticated users (`auth != null`) can read and write the entire `farms/` path.
-- All unauthenticated access is denied by default.
-- All paths outside `farms/` are explicitly denied.
+- Читання/запис за шляхом `farms/` дозволено лише користувачам зі списку доступу (`/allowlist/{uid} === true`).
+- Клієнти можуть читати `/allowlist`, але не можуть його змінювати (список керується поза застосунком).
+- Будь-який доступ поза шляхами `farms/` та `allowlist/` заборонено за замовчуванням.
 
-### Deploying the Security Rules
+### Розгортання правил безпеки
 
-Use the Firebase CLI to deploy the rules to your project:
+Скористайтеся Firebase CLI, щоб розгорнути правила у своєму проєкті:
 
 ```bash
 firebase deploy --only database
 ```
 
-> **Prerequisites:** You must have the Firebase CLI installed (`npm install -g firebase-tools`) and be logged in (`firebase login`). A `firebase.json` file in the project root must reference the rules file:
+> **Передумови:** має бути встановлено Firebase CLI (`npm install -g firebase-tools`) та виконано вхід (`firebase login`). Файл `firebase.json` у корені проєкту має посилатися на файл правил:
 >
 > ```json
 > {
@@ -101,19 +101,19 @@ firebase deploy --only database
 > }
 > ```
 
-To deploy rules without affecting other Firebase services (Hosting, Functions, etc.), always use the `--only database` flag.
+Щоб розгорнути правила, не зачіпаючи інші сервіси Firebase (Hosting, Functions тощо), завжди використовуйте прапорець `--only database`.
 
 ---
 
-## Field Reference
+## Довідник полів
 
-| Field | Type | Default | Description |
+| Поле | Тип | За замовч. | Опис |
 |---|---|---|---|
-| `pump_speed` | Integer | `0` | PWM duty cycle (0–255). Written by the mobile app. |
-| `pump_mode` | String | `"manual"` | Operating mode: `"auto"` or `"manual"`. Written by the mobile app. |
-| `pump_state` | Boolean | `false` | Actual pump on/off state. Written by the ESP32 firmware. |
-| `pump_switch` | Boolean | `false` | Operator intent in manual mode. Written by the mobile app. |
-| `interval_on_min` | Integer | `1` | Minutes the pump stays on per auto-mode cycle. Written by the mobile app. |
-| `interval_off_min` | Integer | `1` | Minutes the pump stays off per auto-mode cycle. Written by the mobile app. |
-| `sensors/moisture` | Integer | `0` | Raw ADC reading from the capacitive moisture sensor (0–4095). Written by firmware. |
-| `sensors/water_level_low` | Boolean | `false` | `true` when the reservoir is below the sensor threshold. Written by firmware. |
+| `pump_speed` | Integer | `0` | Шпаруватість PWM (0–255). Записує застосунок. |
+| `pump_mode` | String | `"manual"` | Режим роботи: `"auto"` або `"manual"`. Записує застосунок. |
+| `pump_state` | Boolean | `false` | Фактичний стан насоса on/off. Записує прошивка ESP32. |
+| `pump_switch` | Boolean | `false` | Намір оператора в ручному режимі. Записує застосунок. |
+| `interval_on_min` | Integer | `1` | Хвилин насос увімкнено за цикл авто-режиму. Записує застосунок. |
+| `interval_off_min` | Integer | `1` | Хвилин насос вимкнено за цикл авто-режиму. Записує застосунок. |
+| `sensors/moisture` | Integer | `0` | Сире значення ADC з капацитивного датчика вологості (0–4095). Записує прошивка. |
+| `sensors/water_level_low` | Boolean | `false` | `true`, коли резервуар нижче порогу датчика. Записує прошивка. |

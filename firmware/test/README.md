@@ -1,28 +1,28 @@
-# Firmware Native Tests
+# Native-тести прошивки
 
-Unit tests and property-based tests for the ESP32 firmware logic live in this
-directory. They are compiled and executed on the host machine (no hardware
-required) using the `native` PlatformIO environment defined in `platformio.ini`.
+Юніт-тести та property-based тести логіки прошивки ESP32 містяться в цій теці.
+Вони компілюються та виконуються на хост-машині (обладнання не потрібне) за
+допомогою середовища `native` PlatformIO, визначеного у `platformio.ini`.
 
-## Running the tests
+## Запуск тестів
 
 ```bash
 pio test -e native
 ```
 
-PlatformIO will compile the test sources together with the firmware library
-code using the GoogleTest framework and run the resulting binary locally.
+PlatformIO скомпілює вихідні файли тестів разом із кодом бібліотеки прошивки,
+використовуючи фреймворк GoogleTest, і запустить отриманий бінарник локально.
 
-## Conventions
+## Домовленості
 
-- One test file per firmware module (e.g. `test_auto_timer.cpp`,
+- Один файл тестів на кожен модуль прошивки (наприклад, `test_auto_timer.cpp`,
   `test_apply_pump_state.cpp`).
-- Property-based tests use [rapidcheck](https://github.com/emil-e/rapidcheck)
-  and are tagged with the feature and property number:
+- Property-based тести використовують [rapidcheck](https://github.com/emil-e/rapidcheck)
+  та позначаються назвою функції й номером властивості:
 
   ```cpp
   // Feature: hydroponics-farm-management, Property 10: Safety interlock overrides all pump activation
   ```
 
-- Each property test runs a minimum of 100 iterations with randomly generated
-  inputs.
+- Кожен property-тест виконує щонайменше 100 ітерацій із випадково згенерованими
+  вхідними даними.

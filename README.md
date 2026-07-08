@@ -1,249 +1,325 @@
 # Hydroponics Farm Management System
 
-A full-stack IoT system for remote monitoring and control of hydroponic growing towers. Built on three tiers: **Firebase Realtime Database** as the communication backbone, **ESP32 firmware** running on each tower's microcontroller, and a **Flutter mobile app** for the farm operator.
+Повностекова IoT-система для віддаленого моніторингу та керування гідропонними баштами. Складається зі спільного бекенду **Firebase Realtime Database**, **прошивки ESP32** на мікроконтролері кожної башти та **двох фронтендів** над одним бекендом: розгорнутого **web-застосунку** (React на Firebase Hosting) і **застосунку Flutter**, який залишено як основу для майбутніх збірок Android/iOS.
+
+> **Примітка про платформи.** Публікація в App Store вимагає платної участі в Apple Developer Program, що суперечить концепції проєкту — **нульові затрати на інфраструктуру**. Тому операторський інтерфейс реалізовано як web (Firebase Hosting) із входом через Google OAuth, у межах безкоштовних лімітів Firebase. Код Flutter збережено як основу для майбутніх Android/iOS, але **зараз не розгортається**.
 
 ---
 
-## Features
+## Можливості
 
-- **Real-time monitoring** — live soil moisture and reservoir water level readings pushed to the app every 30 seconds
-- **Auto mode** — pump cycles on/off on configurable time intervals without any manual intervention
-- **Manual mode** — turn the pump on/off and set speed from the app on demand
-- **PWM speed control** — 0–100% pump speed mapped to 8-bit PWM duty cycle (0–255)
-- **Safety interlock** — pump is forced off automatically when the water reservoir runs low, protecting the pump from dry-run damage
-- **Offline resilience** — firmware continues operating on last known state during WiFi or Firebase outages; app shows a connection banner when disconnected
-
----
-
-## Architecture
-
-```
-┌─────────────────────┐        ┌──────────────────────────┐        ┌─────────────────────┐
-│   Flutter Mobile    │        │  Firebase Realtime DB    │        │   ESP32 Firmware    │
-│        App          │        │                          │        │                     │
-│                     │──────▶ │  farms/farm_id_1/        │ ──────▶│  Stream callback    │
-│  Riverpod providers │        │    towers/tower_1/       │        │  Auto mode timer    │
-│  TowerRepository    │◀────── │      pump_mode           │ ◀───── │  Safety interlock   │
-│  UI widgets         │        │      pump_speed          │        │  PWM controller     │
-│                     │        │      pump_switch         │        │  Sensor reporter    │
-└─────────────────────┘        │      pump_state          │        └─────────────────────┘
-                                │      interval_on_min     │
-                                │      interval_off_min    │
-                                │      sensors/            │
-                                │        moisture          │
-                                │        water_level_low   │
-                                └──────────────────────────┘
-```
-
-The firmware and the mobile app never communicate directly — all coordination flows through Firebase. The firmware is the authoritative source for `pump_state` and sensor readings; the app is the authoritative source for operator intent.
+- **Моніторинг у реальному часі** — покази вологості ґрунту та рівня води в резервуарі надходять кожні 30 секунд
+- **Авто-режим** — насос вмикається/вимикається за налаштовуваними інтервалами часу без ручного втручання
+- **Ручний режим** — увімкнення/вимкнення насоса та задання швидкості на вимогу
+- **Керування швидкістю через PWM** — швидкість 0–100% відображається у 8-бітну шпаруватість PWM (0–255)
+- **Захисне блокування** — насос примусово вимикається, коли резервуар порожніє, захищаючи його від роботи «на суху»
+- **Стійкість до збоїв зв'язку** — прошивка працює на останньому відомому стані під час перебоїв WiFi/Firebase; клієнт показує банер про втрату з'єднання
+- **Автентифікація через Google OAuth** — вхід через Google із авторизацією за списком доступу (allowlist)
+- **Сповіщення моніторингу в Google Chat** — критичні події (низький рівень води, відновлення, пристрій офлайн, зміна режиму) надсилаються власнику через Cloud Function із edge-тригером (без спаму)
 
 ---
 
-## Repository Structure
+## Архітектура
 
 ```
-├── firebase/               # Database schema, security rules, and seed data
-│   ├── seed_data.json      # Initial database structure for import
-│   ├── database.rules.json # Firebase security rules
-│   └── README.md           # Import instructions and field reference
+        Клієнти                          Бекенд                          Пристрій
+┌──────────────────────┐
+│  Web App (React/TS)  │──┐
+│  Firebase Hosting    │  │        ┌──────────────────────────┐        ┌─────────────────────┐
+│  Google OAuth        │  │        │  Firebase Realtime DB    │        │   ESP32 Firmware    │
+└──────────────────────┘  │        │                          │ ──────▶│  Stream callback    │
+                          ├──────▶ │  farms/farm_id_1/        │        │  Auto mode timer    │
+┌──────────────────────┐  │        │    towers/tower_1/       │ ◀───── │  Safety interlock   │
+│  Flutter App         │──┘        │  allowlist/{uid}         │        │  PWM controller     │
+│  (майбутні Android/  │           └──────────────────────────┘        │  Sensor reporter    │
+│   iOS; не деплоїться)│                                                └─────────────────────┘
+└──────────────────────┘
+```
+
+Клієнти ніколи не спілкуються з прошивкою напряму — уся координація проходить через Firebase, який діє як спільна машина станів. Прошивка є авторитетним джерелом для `pump_state` та показів датчиків; клієнти — авторитетне джерело наміру оператора (`pump_mode`, `pump_switch`, `pump_speed`, `interval_on_min`, `interval_off_min`) і **ніколи** не записують поля, якими володіє прошивка.
+
+---
+
+## Модель доступу
+
+- Вхід — через **Google OAuth** (Firebase Auth).
+- Авторизація — за **списком доступу (allowlist)**: користувач може читати/керувати `farms/` лише якщо `/allowlist/{uid} === true`.
+- Правило застосовується авторитетно в `firebase/database.rules.json`; web-клієнт додатково перевіряє членство для дружнього екрана «Немає доступу». Список керується поза застосунком (Terraform/консоль) і недоступний клієнтам для запису.
+- Прошивка використовує привілейований credential і **обходить** ці правила — вона не залежить від allowlist.
+
+Деталі — у специфікації `.kiro/specs/web-app-google-auth/`.
+
+---
+
+## Структура репозиторію
+
+```
+├── firebase/               # Схема БД, правила безпеки (allowlist) та початкові дані
+│   ├── seed_data.json      # Початкова структура БД для імпорту
+│   ├── database.rules.json # Правила безпеки Firebase (гейт через allowlist)
+│   └── README.md           # Інструкції з імпорту та довідник полів
 │
-├── firmware/               # ESP32 C++/Arduino firmware (PlatformIO)
-│   ├── src/                # Production source files
-│   ├── test/               # Unit tests and property-based tests (GoogleTest + rapidcheck)
-│   └── platformio.ini      # Build configuration for esp32dev and native targets
+├── firmware/               # Прошивка ESP32 на C++/Arduino (PlatformIO)
+│   ├── src/                # Продакшн-код
+│   ├── test/               # Юніт- та property-based тести (GoogleTest + rapidcheck)
+│   └── platformio.ini      # Конфігурація збірки для esp32dev та native
 │
-├── mobile/                 # Flutter mobile application
-│   ├── lib/                # App source (models, repository, providers, UI)
-│   └── test/               # Unit, property, and widget tests
+├── web/                    # Web-застосунок оператора (React + TypeScript + Vite) — розгортається
+│   ├── src/                # firebase, auth (Google OAuth + allowlist), data, components
+│   └── test/               # Юніт- та property-based тести (Vitest + fast-check)
 │
-└── hardware/               # Wiring diagram and bill of materials
-    └── README.md           # Component list (AliExpress), GPIO assignments, assembly notes
+├── mobile/                 # Застосунок Flutter — основа для майбутніх Android/iOS (не деплоїться)
+│   ├── lib/                # Код застосунку (моделі, репозиторій, провайдери, UI)
+│   └── test/               # Юніт-, property- та widget-тести
+│
+├── functions/              # Cloud Functions (TypeScript): сповіщення моніторингу в Google Chat
+│   ├── src/                # тригери RTDB + scheduled, логіка сповіщень, відправка у webhook
+│   └── test/               # Юніт- та property-based тести (Vitest + fast-check)
+│
+├── infra/terraform/        # Інфраструктура як код: провіженінг Firebase/GCP + деплой web
+│
+├── hardware/               # Схема підключення та список компонентів
+│   └── README.md
+│
+├── firebase.json           # Мапінг Hosting → web/dist та Database → правила
+└── .firebaserc             # Прив'язка проєкту Firebase
 ```
 
 ---
 
-## Tech Stack
+## Технологічний стек
 
-| Layer | Technology |
+| Рівень | Технологія |
 |---|---|
-| Database | Firebase Realtime Database |
-| Firmware | C++ / Arduino framework on ESP32 (PlatformIO) |
-| Firmware libraries | Firebase-ESP-Client, ArduinoJson, rapidcheck |
-| Mobile app | Flutter 3 / Dart |
-| App state management | flutter_riverpod |
-| App Firebase client | firebase_core, firebase_database |
-| Firmware testing | GoogleTest + rapidcheck (property-based) |
-| App testing | flutter_test, mockito |
+| База даних | Firebase Realtime Database |
+| Автентифікація | Firebase Auth (Google OAuth) + allowlist |
+| Прошивка | C++ / фреймворк Arduino на ESP32 (PlatformIO) |
+| Бібліотеки прошивки | Firebase-ESP-Client, ArduinoJson, rapidcheck |
+| Web-застосунок | React 18 + TypeScript + Vite, Firebase JS SDK |
+| Тестування web | Vitest + fast-check (property-based) + Testing Library |
+| Мобільний застосунок | Flutter 3 / Dart, flutter_riverpod |
+| Тестування застосунку | flutter_test, mockito |
+| Хостинг | Firebase Hosting |
+| Сповіщення | Cloud Functions (2nd gen, TypeScript) → Google Chat webhook |
+| Інфраструктура | Terraform (провайдери google / google-beta) |
+| CI | GitHub Actions |
 
 ---
 
-## Hardware
+## Апаратна частина
 
-The device is built around an **ESP32 DevKit v1** and all components are available on AliExpress for ~$15–25 USD.
+Пристрій побудований навколо **ESP32 DevKit v1**; усі компоненти доступні на AliExpress за ~$15–25 USD.
 
-| Component | Purpose |
+| Компонент | Призначення |
 |---|---|
-| ESP32 DevKit v1 (38-pin) | Microcontroller — WiFi, Firebase, PWM, ADC |
-| Capacitive Soil Moisture Sensor v1.2 | Moisture reading on GPIO 34 (ADC) |
-| XKC-Y25 non-contact liquid level sensor | Water level detection on GPIO 19 |
-| IRF520 MOSFET module | PWM-controlled switch for the 12V pump on GPIO 18 |
-| 12V DC submersible pump (3–5W) | Water delivery to the tower |
-| 12V 2A DC power adapter | Powers the pump |
-| LM2596 DC-DC step-down module | Steps 12V down to 5V for the ESP32 |
+| ESP32 DevKit v1 (38-pin) | Мікроконтролер — WiFi, Firebase, PWM, ADC |
+| Капацитивний датчик вологості ґрунту v1.2 | Зчитування вологості на GPIO 34 (ADC) |
+| Безконтактний датчик рівня рідини XKC-Y25 | Виявлення рівня води на GPIO 19 |
+| MOSFET-модуль IRF520 | Ключ із PWM-керуванням для насоса 12V на GPIO 18 |
+| Занурювальний насос 12V DC (3–5W) | Подача води до башти |
+| Блок живлення 12V 2A (DC адаптер) | Живлення насоса |
+| Понижуючий модуль LM2596 DC-DC | Знижує 12V до 5V для ESP32 |
 
-See [`hardware/README.md`](hardware/README.md) for the full bill of materials, wiring diagram, and assembly notes.
+Повний список компонентів, схему підключення та примітки зі збирання див. у [`hardware/README.md`](hardware/README.md).
 
-### GPIO Assignments
+### Призначення GPIO
 
-| GPIO | Mode | Connected to |
+| GPIO | Режим | Підключено до |
 |---|---|---|
-| GPIO 18 | PWM output | IRF520 MOSFET SIG (pump control) |
-| GPIO 34 | ADC input | Moisture sensor AOUT |
-| GPIO 19 | Digital input | XKC-Y25 water level sensor OUT |
+| GPIO 18 | Вихід PWM | IRF520 MOSFET SIG (керування насосом) |
+| GPIO 34 | Вхід ADC | Датчик вологості AOUT |
+| GPIO 19 | Цифровий вхід | Датчик рівня води XKC-Y25 OUT |
 
 ---
 
-## Getting Started
+## Початок роботи
 
-### 1. Firebase Setup
+### 1. Інфраструктура та Firebase
 
-1. Create a Firebase project and enable **Realtime Database**.
-2. Import the seed data from `firebase/seed_data.json` via the Firebase Console (**Realtime Database → ⋮ → Import JSON**).
-3. Deploy the security rules:
-   ```bash
-   npm install -g firebase-tools
-   firebase login
-   firebase deploy --only database
-   ```
+**Рекомендовано — через Terraform** (провіженить проєкт, Firebase, RTDB, Google-провайдер, Hosting і виконує деплой):
 
-See [`firebase/README.md`](firebase/README.md) for detailed import instructions and REST API alternatives.
+```bash
+cd infra/terraform
+cp terraform.tfvars.example terraform.tfvars   # впишіть значення
+terraform init -backend-config="bucket=<your-tf-state-bucket>" -backend-config="prefix=tower"
+terraform apply
+```
 
-### 2. ESP32 Firmware
+Передумови: білінг-акаунт (Blaze), OAuth client (GCP OAuth consent screen), GCS-бакет для стейту, Firebase CLI. Деталі — у [`infra/terraform/README.md`](infra/terraform/README.md).
 
-**Prerequisites:** [PlatformIO](https://platformio.org/) (VS Code extension or CLI)
+**Або вручну:** створіть проєкт Firebase, увімкніть **Realtime Database** та провайдер **Google** в Authentication, імпортуйте `firebase/seed_data.json`, засідьте allowlist і розгорніть правила:
+```bash
+npm install -g firebase-tools && firebase login
+firebase deploy --only database
+```
+Докладніше — у [`firebase/README.md`](firebase/README.md).
 
-1. Open the `firmware/` folder in VS Code with the PlatformIO extension, or use the CLI.
-2. Copy `firmware/src/config.h.example` to `firmware/src/config.h` and fill in your credentials:
+### 2. Web-застосунок
+
+**Передумови:** Node.js ≥ 20.
+
+```bash
+cd web
+npm install
+cp .env.example .env         # заповніть VITE_FB_* (Terraform генерує це автоматично)
+npm run dev                  # локальна розробка
+npm run test:run             # тести (Vitest + fast-check)
+npm run build                # продакшн-збірка у web/dist
+```
+
+Розгортання виконується Terraform (`terraform apply`) або вручну: `firebase deploy --only hosting`.
+
+### 3. Прошивка ESP32
+
+**Передумови:** [PlatformIO](https://platformio.org/) (розширення для VS Code або CLI)
+
+1. Скопіюйте `firmware/src/config.h.example` у `firmware/src/config.h` та впишіть свої облікові дані:
    ```cpp
    #define SSID          "your_wifi_ssid"
    #define PASSWORD      "your_wifi_password"
    #define FIREBASE_HOST "your-project-id-default-rtdb.firebaseio.com"
    #define FIREBASE_AUTH "your_database_secret_or_id_token"
    ```
-3. Flash to the ESP32:
+2. Прошийте ESP32 та спостерігайте за виводом:
    ```bash
    pio run --target upload --environment esp32dev
-   ```
-4. Monitor serial output:
-   ```bash
    pio device monitor
    ```
+3. Тести прошивки на хості (без обладнання):
+   ```bash
+   pio test --environment native
+   ```
 
-**Run firmware tests on host (no hardware required):**
+### 4. Мобільний застосунок Flutter (необов'язково)
+
+Збережено для майбутніх Android/iOS; наразі не розгортається.
+
 ```bash
-pio test --environment native
+cd mobile
+flutter pub get
+flutter run
+flutter test
 ```
-
-### 3. Flutter Mobile App
-
-**Prerequisites:** [Flutter SDK](https://flutter.dev/docs/get-started/install) ≥ 3.0, a Firebase project with the Android/iOS app registered.
-
-1. Add your `google-services.json` (Android) or `GoogleService-Info.plist` (iOS) to the appropriate platform folder inside `mobile/`.
-2. Install dependencies:
-   ```bash
-   cd mobile
-   flutter pub get
-   ```
-3. Run the app:
-   ```bash
-   flutter run
-   ```
-4. Run tests:
-   ```bash
-   flutter test
-   ```
 
 ---
 
-## Database Schema
+## Схема бази даних
 
 ```
 farms/
   farm_id_1/
     towers/
       tower_1/
-        pump_speed:       Integer   (0–255, PWM duty cycle — written by app)
-        pump_mode:        String    ("auto" | "manual" — written by app)
-        pump_state:       Boolean   (actual on/off — written by firmware)
-        pump_switch:      Boolean   (operator intent in manual mode — written by app)
-        interval_on_min:  Integer   (minutes pump stays on in auto mode — written by app)
-        interval_off_min: Integer   (minutes pump stays off in auto mode — written by app)
+        pump_speed:       Integer   (0–255, шпаруватість PWM — записує клієнт)
+        pump_mode:        String    ("auto" | "manual" — записує клієнт)
+        pump_state:       Boolean   (фактичний стан on/off — записує прошивка)
+        pump_switch:      Boolean   (намір оператора в ручному режимі — записує клієнт)
+        interval_on_min:  Integer   (хвилин увімкнено в авто-режимі — записує клієнт)
+        interval_off_min: Integer   (хвилин вимкнено в авто-режимі — записує клієнт)
         sensors/
-          moisture:         Integer   (ADC raw value 0–4095 — written by firmware)
-          water_level_low:  Boolean   (true = reservoir low — written by firmware)
+          moisture:         Integer   (сире значення ADC 0–4095 — записує прошивка)
+          water_level_low:  Boolean   (true = резервуар порожніє — записує прошивка)
+
+allowlist/
+  <uid>: true                        (авторизовані користувачі — керується поза застосунком)
 ```
 
 ---
 
-## Safety Interlock
+## Захисне блокування
 
-When `water_level_low` is `true`, the firmware immediately sets PWM to 0 and writes `pump_state = false` to Firebase — regardless of `pump_mode`, `pump_switch`, or the auto timer state. This prevents the pump from running dry. Normal operation resumes automatically once the water level is restored.
+Коли `water_level_low` дорівнює `true`, прошивка негайно встановлює PWM у 0 та записує `pump_state = false` у Firebase — незалежно від `pump_mode`, `pump_switch` чи стану авто-таймера. Це запобігає роботі насоса «на суху». Нормальна робота відновлюється автоматично, щойно рівень води буде відновлено.
 
 ---
 
-## Testing
+## Сповіщення в Google Chat
 
-The project uses property-based testing (PBT) throughout to verify correctness properties across randomly generated inputs (minimum 100 iterations each).
+Cloud Functions (2nd gen, `functions/`) стежать за RTDB та надсилають сповіщення власнику через **incoming webhook** Google Chat. Логіка edge-тригерна — повідомлення йде лише на зміні стану, а не щопокази кожні 30 с.
 
-**Firmware (native build):**
+Події:
+
+| Подія | Тригер | Приклад |
+|---|---|---|
+| Низький рівень води (критично) | `water_level_low` false → true | 🚨 Насос вимкнено для захисту від роботи «на суху» |
+| Рівень води відновлено | `water_level_low` true → false | ✅ Нормальна робота відновлена |
+| Пристрій офлайн | немає записів датчиків > 3 хв (scheduled) | ⚠️ Немає даних, перевірте живлення/WiFi |
+| Пристрій знову онлайн | записи датчиків відновились | 🟢 Дані знову надходять |
+| Зміна режиму помпи | `pump_mode` змінився | ℹ️ Режим: auto → manual |
+
+**Налаштування:** створіть incoming webhook у просторі Chat власника (Space → Apps & integrations → Webhooks), передайте URL у Terraform-змінну `google_chat_webhook_url` — вона зберігається в Secret Manager і читається функціями як секрет `GOOGLE_CHAT_WEBHOOK_URL`. Регіон RTDB-тригерів має збігатися з `rtdb_region` (за замовч. `europe-west1`).
+
+---
+
+## Тестування
+
+Проєкт наскрізно використовує property-based тестування (PBT) для перевірки властивостей коректності на випадково згенерованих вхідних даних (мінімум 100 ітерацій кожна).
+
+**Прошивка (native-збірка):**
 ```bash
-cd firmware
-pio test --environment native
+cd firmware && pio test --environment native
 ```
 
-**Flutter app:**
+**Web-застосунок (Vitest + fast-check):**
 ```bash
-cd mobile
-flutter test
+cd web && npm run test:run && npm run typecheck
 ```
 
-Key correctness properties verified by tests:
+**Cloud Functions (Vitest + fast-check):**
+```bash
+cd functions && npm run test:run && npm run typecheck
+```
 
-- `TowerState` serialization round-trip through Firebase snapshot
-- Safety interlock overrides all pump activation when water is low
-- Auto timer cycles at correct `millis()`-based intervals
-- PWM duty cycle always matches pump on/off state
-- Interval validation rejects non-integer and out-of-range input
-- Mode switch panel visibility is mutually exclusive
+**Застосунок Flutter:**
+```bash
+cd mobile && flutter test
+```
+
+Ключові властивості коректності, що перевіряються тестами:
+
+- Кругова серіалізація `TowerState` через знімок Firebase (прошивка, web, Flutter)
+- Захисне блокування переважає над будь-яким увімкненням насоса за низького рівня води
+- Авто-таймер циклює за коректними інтервалами на основі `millis()`
+- Шпаруватість PWM завжди відповідає стану насоса on/off
+- Валідація інтервалів відхиляє нецілі та поза-діапазонні значення
+- Видимість панелей режиму є взаємовиключною
+- Доступ надається лише за наявності в allowlist; клієнт ніколи не пише поля прошивки
+
+CI (GitHub Actions, `.github/workflows/ci.yml`) виконує тести й збірку web та `terraform fmt`/`validate`.
 
 ---
 
-## Built With
+## Специфікації
 
-### Development Tools
+Проєкт розробляється за специфікаціями (Kiro-стиль), що зберігаються в `.kiro/specs/`:
 
-| Tool | Purpose |
+- `hydroponics-farm-management/` — базова система (Firebase, прошивка, Flutter)
+- `web-app-google-auth/` — web-застосунок, Google OAuth та доставка через Terraform
+
+Кожна специфікація містить `requirements.md`, `design.md` і `tasks.md`.
+
+---
+
+## Створено за допомогою
+
+### Інструменти розробки
+
+| Інструмент | Призначення |
 |---|---|
-| [VS Code](https://code.visualstudio.com/) | Primary code editor |
-| [Kiro](https://kiro.dev/) | AI-powered IDE used for spec-driven development, code generation, and implementation |
-| [PlatformIO](https://platformio.org/) | ESP32 firmware build system, dependency management, and test runner |
-| [Firebase CLI](https://firebase.google.com/docs/cli) | Deploying database security rules (`firebase deploy --only database`) |
-| [Flutter SDK](https://flutter.dev/) | Mobile app build toolchain and test runner |
-| [Git](https://git-scm.com/) | Version control |
+| [Kiro](https://kiro.dev/) | ШІ-IDE для розробки базової системи за специфікаціями (v1.0.0) |
+| [Claude Code](https://claude.com/claude-code) | ШІ-агент, яким додано web-застосунок, автентифікацію та інфраструктуру Terraform |
+| [PlatformIO](https://platformio.org/) | Збірка прошивки ESP32, залежності та запуск тестів |
+| [Vite](https://vitejs.dev/) | Збірник web-застосунку |
+| [Firebase CLI](https://firebase.google.com/docs/cli) | Розгортання Hosting та правил БД |
+| [Terraform](https://www.terraform.io/) | Провіженінг інфраструктури Firebase/GCP |
+| [Flutter SDK](https://flutter.dev/) | Інструментарій збірки мобільного застосунку |
+| [Git](https://git-scm.com/) | Контроль версій |
 
-### AI Assistance
-
-This project was developed with the help of [Kiro](https://kiro.dev/) — an AI-powered development environment. Kiro was used throughout the entire development lifecycle:
-
-- **Spec-driven design** — requirements, architecture design, and implementation task planning were created collaboratively using Kiro's spec workflow
-- **Code generation** — firmware C++ source, Flutter Dart source, Firebase rules, and test suites were generated and refined with Kiro
-- **Property-based test design** — correctness properties and PBT scenarios were defined and implemented with AI assistance
-- **Documentation** — hardware wiring diagrams, BOM, and this README were produced with Kiro
+Базову систему (прошивка, Flutter, Firebase, апаратна документація) створено за допомогою [Kiro](https://kiro.dev/) за робочим процесом специфікацій. Web-рівень, модель доступу через Google OAuth і доставку через Terraform додано пізніше за допомогою [Claude Code](https://claude.com/claude-code).
 
 ---
 
-## License
+## Ліцензія
 
 [Mozilla Public License 2.0](https://www.mozilla.org/en-US/MPL/2.0/)
 
-This project is licensed under the MPL-2.0. You may use, modify, and distribute this code, but any modifications to MPL-licensed files must be released under the same license. Larger works may combine this code with code under other licenses.
+Цей проєкт ліцензовано за MPL-2.0. Ви можете використовувати, змінювати та поширювати цей код, але будь-які зміни до файлів під ліцензією MPL мають випускатися під тією ж ліцензією. Ширші твори можуть поєднувати цей код із кодом під іншими ліцензіями.
