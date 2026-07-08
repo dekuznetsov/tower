@@ -1,0 +1,33 @@
+# Copy to terraform.tfvars and fill in. Do NOT commit the real file (git-ignored).
+
+project_id = "hydroponics-farm-123"
+site_id    = "hydroponics-farm-123" # recommended: equal to project_id (the default Hosting site)
+
+# Set true to create a new project (requires billing_account and org_id/folder).
+create_project  = false
+billing_account = "" # e.g. "01ABCD-2345EF-6789GH" (Blaze required for Auth + RTDB)
+org_id          = ""
+
+region      = "europe-west1"
+rtdb_region = "europe-west1"
+
+# Include the Hosting domain(s) and localhost for local dev.
+authorized_domains = [
+  "localhost",
+  "hydroponics-farm-123.web.app",
+  "hydroponics-farm-123.firebaseapp.com",
+]
+
+# Google sign-in provider credentials (from the GCP OAuth consent screen).
+oauth_client_id     = "REPLACE.apps.googleusercontent.com"
+oauth_client_secret = "REPLACE"
+
+# Firebase Auth UIDs allowed to read/control the farm.
+allowlist_uids = [
+  # "abc123UID...",
+]
+
+# Google Chat monitoring alerts. Create an incoming webhook in the owner's Chat
+# space (Space → Apps & integrations → Webhooks) and paste the URL here.
+deploy_functions        = true
+google_chat_webhook_url = "https://chat.googleapis.com/v1/spaces/AAAA/messages?key=...&token=..."
