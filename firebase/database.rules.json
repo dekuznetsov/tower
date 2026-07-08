@@ -1,8 +1,12 @@
 {
   "rules": {
-    "farms": {
+    "allowlist": {
       ".read": "auth != null",
-      ".write": "auth != null"
+      ".write": false
+    },
+    "farms": {
+      ".read": "auth != null && root.child('allowlist').child(auth.uid).val() === true",
+      ".write": "auth != null && root.child('allowlist').child(auth.uid).val() === true"
     },
     "$other": {
       ".read": false,
