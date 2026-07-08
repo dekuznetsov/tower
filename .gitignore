@@ -1,7 +1,11 @@
 # =============================================================================
 # Kiro IDE
 # =============================================================================
-.kiro/
+# Ignore Kiro IDE state, but track the specs (they are the source of truth for
+# planned/implemented features). A parent dir can't be re-included once ignored,
+# so ignore the contents (.kiro/*) and un-ignore .kiro/specs.
+.kiro/*
+!.kiro/specs/
 
 # =============================================================================
 # ESP32 Firmware — PlatformIO
@@ -80,3 +84,29 @@ GoogleService-Info.plist
 .env.*
 secrets.h
 firmware/src/secrets.h
+
+# =============================================================================
+# Web app (React + Vite)
+# =============================================================================
+web/node_modules/
+web/dist/
+web/coverage/
+web/.vite/
+
+# =============================================================================
+# Cloud Functions (TypeScript)
+# =============================================================================
+functions/node_modules/
+functions/lib/
+functions/coverage/
+
+# =============================================================================
+# Terraform
+# =============================================================================
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+!**/*.tfvars.example
+.terraform.lock.hcl
